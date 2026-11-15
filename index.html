@@ -23,13 +23,15 @@
     .day-title { font-weight: bold; margin-bottom: 10px; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
     .meal-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: nowrap; }
     .meal-row label { width: 75px; font-size: 0.9em; font-weight: bold; flex-shrink: 0; }
-    select, input[type="number"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-    select { flex: 1; min-width: 0; }
-    input[type="number"] { width: 50px; text-align: center; flex-shrink: 0; }
+    input[type="number"] { width: 50px; text-align: center; flex-shrink: 0; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
 
     /* Botones y Listas */
     .btn-main { width: 100%; padding: 15px; background-color: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
     .btn-main:disabled { background-color: #999; }
+    
+    .btn-danger { width: 100%; padding: 15px; background-color: #dc3545; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    .btn-danger:disabled { background-color: #999; }
+
     .ingredient-list { list-style: none; padding: 0; margin: 0; }
     .ingredient-item { padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; margin-bottom: 5px; border-radius: 4px; transition: 0.2s; }
     
@@ -54,6 +56,7 @@
   <div id="screen-plan" class="screen active">
     <div id="planner-container"></div>
     <button class="btn-main" id="btn-save" onclick="guardarPlan()">Guardar Plan Semanal</button>
+    <button class="btn-danger" id="btn-clear-plan" onclick="limpiarPlan()">Limpiar Selección</button>
   </div>
 
   <div id="screen-compras" class="screen">
@@ -95,6 +98,11 @@
     document.getElementById('status').textContent = msg;
   }
 
+  // Utilidad para quitar tildes/acentos
+  function removeAccents(str) {
+    return str.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  }
+
   // 1. CARGAR DATOS
   function cargarDatos() {
     setStatus("Sincronizando...");
@@ -111,18 +119,10 @@
       .catch(err => setStatus("Error de red"));
   }
 
-  // 2. DIBUJAR FORMULARIO PLANIFICADOR CON DATALIST
+  // 2. DIBUJAR FORMULARIO PLANIFICADOR CON CUSTOM DROPDOWN
   function renderPlannerUI() {
     const container = document.getElementById('planner-container');
     container.innerHTML = '';
-
-    // Crear el Datalist invisible con todas las recetas
-    let dataListHTML = `<datalist id="recetas-list">`;
-    dbData.recetas.forEach(r => {
-      dataListHTML += `<option value="${r.nombre}">`;
-    });
-    dataListHTML += `</datalist>`;
-    container.innerHTML += dataListHTML;
 
     dias.forEach(dia => {
       let card = `<div class="day-card"><div class="day-title">${dia}</div>`;
@@ -135,8 +135,13 @@
         card += `
           <div class="meal-row" data-dia="${dia}" data-comida="${comida}">
             <label>${comida}</label>
-            <!-- REEMPLAZO DEL SELECT POR UN INPUT CON BÚSQUEDA -->
-            <input type="text" class="sel-receta" list="recetas-list" placeholder="Escribir o elegir..." value="${recetaNombre}" style="flex:1; min-width:0; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px;">
+            <div style="position:relative; flex:1; min-width:0;">
+              <input type="text" class="sel-receta" placeholder="Buscar..." value="${recetaNombre}" 
+                     style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px;"
+                     onfocus="showDropdown(this)" oninput="filterDropdown(this)">
+              <div class="custom-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #ccc; max-height:200px; overflow-y:auto; z-index:100; border-radius:4px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
+              </div>
+            </div>
             <input type="number" class="in-comensales" min="1" max="20" value="${comensalesVal}">
           </div>
         `;
@@ -146,6 +151,50 @@
     });
   }
 
+  // LOGICA DEL CUSTOM DROPDOWN
+  function showDropdown(inputElem) {
+    document.querySelectorAll('.custom-dropdown').forEach(d => d.style.display = 'none');
+    const dropdown = inputElem.nextElementSibling;
+    dropdown.style.display = 'block';
+    filterDropdown(inputElem);
+  }
+
+  function filterDropdown(inputElem) {
+    const dropdown = inputElem.nextElementSibling;
+    const term = removeAccents(inputElem.value);
+    
+    dropdown.innerHTML = '';
+    
+    dbData.recetas.forEach(r => {
+      const normalizedOption = removeAccents(r.nombre);
+      if (normalizedOption.includes(term)) {
+        const optionDiv = document.createElement('div');
+        optionDiv.textContent = r.nombre;
+        optionDiv.style.padding = '10px';
+        optionDiv.style.cursor = 'pointer';
+        optionDiv.style.borderBottom = '1px solid #eee';
+        
+        optionDiv.onmousedown = function(e) {
+            e.preventDefault(); // Importante para no perder foco antes del click
+            inputElem.value = r.nombre;
+            dropdown.style.display = 'none';
+        };
+        dropdown.appendChild(optionDiv);
+      }
+    });
+    
+    if (dropdown.innerHTML === '') {
+        dropdown.innerHTML = '<div style="padding:10px; color:#999; font-style:italic;">Sin resultados</div>';
+    }
+  }
+
+  // Ocultar dropdown si se hace click afuera
+  document.addEventListener('mousedown', function(e) {
+    if (!e.target.classList.contains('sel-receta') && !e.target.closest('.custom-dropdown')) {
+        document.querySelectorAll('.custom-dropdown').forEach(d => d.style.display = 'none');
+    }
+  });
+
   // 3. GUARDAR PLAN EN GOOGLE SHEETS
   function guardarPlan() {
     const btn = document.getElementById('btn-save');
@@ -154,7 +203,6 @@
 
     const nuevoPlan = [];
     document.querySelectorAll('.meal-row').forEach(row => {
-      // Ahora tomamos directamente el valor del input de texto
       const recetaNombre = row.querySelector('.sel-receta').value.trim();
       
       if (recetaNombre) {
@@ -183,6 +231,17 @@
       btn.disabled = false;
       setStatus("Error de sincronización");
     });
+  }
+
+  // 3b. LIMPIAR PLANIFICADOR
+  function limpiarPlan() {
+    if(!confirm("¿Seguro que querés vaciar todo el planificador de la semana?")) return;
+    
+    // Vaciar visualmente los inputs
+    document.querySelectorAll('.sel-receta').forEach(input => input.value = '');
+    
+    // Guardar el plan vacío
+    guardarPlan();
   }
 
   // 4. GUARDAR CHECK DE COMPRA EN GOOGLE SHEETS
