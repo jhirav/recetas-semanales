@@ -116,24 +116,27 @@
     const container = document.getElementById('planner-container');
     container.innerHTML = '';
 
-    let optionsHTML = `<option value="">-- Sin asignar --</option>`;
-    dbData.recetas.forEach(r => {
-      optionsHTML += `<option value="${r.id}">${r.nombre}</option>`;
-    });
-
     dias.forEach(dia => {
       let card = `<div class="day-card"><div class="day-title">${dia}</div>`;
       
       comidas.forEach(comida => {
+        // En Sheets ahora guardamos el nombre de la receta, no el ID numérico
         const planExistente = dbData.planificador.find(p => p.dia === dia && p.comida === comida);
-        const recetaSel = planExistente ? planExistente.receta_id : "";
+        const recetaNombre = planExistente ? planExistente.receta_id : "";
         const comensalesVal = planExistente ? planExistente.comensales : 2;
+
+        let optionsHTML = `<option value="">-- Sin asignar --</option>`;
+        dbData.recetas.forEach(r => {
+          // Si el nombre de la receta coincide con lo guardado en Sheets, lo seleccionamos
+          const selected = (r.nombre === recetaNombre) ? 'selected' : '';
+          optionsHTML += `<option value="${r.id}" ${selected}>${r.nombre}</option>`;
+        });
 
         card += `
           <div class="meal-row" data-dia="${dia}" data-comida="${comida}">
             <label>${comida}</label>
             <select class="sel-receta">
-              ${optionsHTML.replace(`value="${recetaSel}"`, `value="${recetaSel}" selected`)}
+              ${optionsHTML}
             </select>
             <input type="number" class="in-comensales" min="1" max="20" value="${comensalesVal}">
           </div>
@@ -152,12 +155,17 @@
 
     const nuevoPlan = [];
     document.querySelectorAll('.meal-row').forEach(row => {
-      const recetaId = row.querySelector('.sel-receta').value;
+      const selectElement = row.querySelector('.sel-receta');
+      const recetaId = selectElement.value;
+      
       if (recetaId) {
+        // En vez del ID, guardamos el nombre (el texto visible) para que las fórmulas de Sheets sumen bien
+        const recetaNombre = selectElement.options[selectElement.selectedIndex].text;
+        
         nuevoPlan.push({
           dia: row.getAttribute('data-dia'),
           comida: row.getAttribute('data-comida'),
-          receta_id: recetaId,
+          receta_id: recetaNombre, // Guardamos el nombre
           comensales: parseInt(row.querySelector('.in-comensales').value) || 2
         });
       }
@@ -186,14 +194,12 @@
     const isChecked = element.checked;
     const li = element.closest('li');
     
-    // Cambio visual inmediato
     if (isChecked) {
       li.classList.add('comprado');
     } else {
       li.classList.remove('comprado');
     }
     
-    // Actualizar variable local para evitar desfasajes si no se recarga
     dbData.ingredientes.forEach(ing => {
         if(ing.nombre === nombreIngrediente) {
             ing.comprado = isChecked;
@@ -211,7 +217,7 @@
     .catch(() => setStatus("Error al sincronizar check"));
   }
 
-  // 5. LIMPIAR TODOS LOS CHECKS PARA UNA NUEVA SEMANA
+  // 5. LIMPIAR TODOS LOS CHECKS
   function limpiarChecks() {
     if(!confirm("¿Seguro que querés despintar todos los ingredientes?")) return;
     
@@ -219,7 +225,6 @@
     btn.disabled = true;
     setStatus("Limpiando servidor...");
 
-    // Limpiar localmente rápido
     dbData.ingredientes.forEach(ing => ing.comprado = false);
     renderListaCompras();
 
@@ -244,7 +249,8 @@
     const listaCompras = [];
 
     dbData.planificador.forEach(comidaPlan => {
-      const recetaObj = dbData.recetas.find(r => r.id == comidaPlan.receta_id || r.nombre == comidaPlan.receta_id);
+      // Como ahora guardamos el nombre de la receta, buscamos por nombre
+      const recetaObj = dbData.recetas.find(r => r.nombre === comidaPlan.receta_id || r.id == comidaPlan.receta_id);
       if(!recetaObj) return;
 
       const idRecetaPlan = recetaObj.id;
@@ -258,8 +264,6 @@
           const index = listaCompras.findIndex(item => item.nombre === ing.nombre && item.unidad === ing.unidad);
           if (index > -1) {
             listaCompras[index].cantidad += cantidadTotal;
-            // Si al menos una parte está comprada, se considera comprado (lógica conservadora)
-            // O viceversa: si está marcado comprado en dbData, lo respetamos.
           } else {
             listaCompras.push({ ...ing, cantidad: cantidadTotal });
           }
@@ -285,15 +289,11 @@
 
     listaCompras.forEach((item, index) => {
       const li = document.createElement('li');
-      
       const isChecked = item.comprado ? 'checked' : '';
-      
       li.className = `ingredient-item ${item.comprado ? 'comprado' : ''}`;
-      
       const iconoDespensa = item.es_despensa === true || item.es_despensa === 'SÍ' ? ' 🏠' : '';
       const origenStr = item.origen ? ` <div style="font-size:0.75em; color:#888; margin-top:4px;">${item.origen}</div>` : '';
       
-      // Le pasamos el nombre real del ingrediente para que Apps Script lo encuentre fácil
       li.innerHTML = `
         <div class="item-text-container">
           <input type="checkbox" class="item-checkbox" id="chk-${index}" ${isChecked} onchange="toggleCompra('${item.nombre}', this)">
