@@ -111,33 +111,32 @@
       .catch(err => setStatus("Error de red"));
   }
 
-  // 2. DIBUJAR FORMULARIO PLANIFICADOR
+  // 2. DIBUJAR FORMULARIO PLANIFICADOR CON DATALIST
   function renderPlannerUI() {
     const container = document.getElementById('planner-container');
     container.innerHTML = '';
+
+    // Crear el Datalist invisible con todas las recetas
+    let dataListHTML = `<datalist id="recetas-list">`;
+    dbData.recetas.forEach(r => {
+      dataListHTML += `<option value="${r.nombre}">`;
+    });
+    dataListHTML += `</datalist>`;
+    container.innerHTML += dataListHTML;
 
     dias.forEach(dia => {
       let card = `<div class="day-card"><div class="day-title">${dia}</div>`;
       
       comidas.forEach(comida => {
-        // En Sheets ahora guardamos el nombre de la receta, no el ID numérico
         const planExistente = dbData.planificador.find(p => p.dia === dia && p.comida === comida);
         const recetaNombre = planExistente ? planExistente.receta_id : "";
         const comensalesVal = planExistente ? planExistente.comensales : 2;
 
-        let optionsHTML = `<option value="">-- Sin asignar --</option>`;
-        dbData.recetas.forEach(r => {
-          // Si el nombre de la receta coincide con lo guardado en Sheets, lo seleccionamos
-          const selected = (r.nombre === recetaNombre) ? 'selected' : '';
-          optionsHTML += `<option value="${r.id}" ${selected}>${r.nombre}</option>`;
-        });
-
         card += `
           <div class="meal-row" data-dia="${dia}" data-comida="${comida}">
             <label>${comida}</label>
-            <select class="sel-receta">
-              ${optionsHTML}
-            </select>
+            <!-- REEMPLAZO DEL SELECT POR UN INPUT CON BÚSQUEDA -->
+            <input type="text" class="sel-receta" list="recetas-list" placeholder="Escribir o elegir..." value="${recetaNombre}" style="flex:1; min-width:0; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px;">
             <input type="number" class="in-comensales" min="1" max="20" value="${comensalesVal}">
           </div>
         `;
@@ -155,17 +154,14 @@
 
     const nuevoPlan = [];
     document.querySelectorAll('.meal-row').forEach(row => {
-      const selectElement = row.querySelector('.sel-receta');
-      const recetaId = selectElement.value;
+      // Ahora tomamos directamente el valor del input de texto
+      const recetaNombre = row.querySelector('.sel-receta').value.trim();
       
-      if (recetaId) {
-        // En vez del ID, guardamos el nombre (el texto visible) para que las fórmulas de Sheets sumen bien
-        const recetaNombre = selectElement.options[selectElement.selectedIndex].text;
-        
+      if (recetaNombre) {
         nuevoPlan.push({
           dia: row.getAttribute('data-dia'),
           comida: row.getAttribute('data-comida'),
-          receta_id: recetaNombre, // Guardamos el nombre
+          receta_id: recetaNombre, 
           comensales: parseInt(row.querySelector('.in-comensales').value) || 2
         });
       }
@@ -249,7 +245,6 @@
     const listaCompras = [];
 
     dbData.planificador.forEach(comidaPlan => {
-      // Como ahora guardamos el nombre de la receta, buscamos por nombre
       const recetaObj = dbData.recetas.find(r => r.nombre === comidaPlan.receta_id || r.id == comidaPlan.receta_id);
       if(!recetaObj) return;
 
