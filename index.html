@@ -3,79 +3,201 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Planificador y Compras</title>
+  <title>Planificador de Comidas</title>
   <style>
-    body { font-family: system-ui, sans-serif; padding: 20px; background-color: #f4f7f6; color: #333; }
-    .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    h2 { color: #226a4d; border-bottom: 2px solid #226a4d; padding-bottom: 10px; }
-    button { width: 100%; padding: 12px; background-color: #226a4d; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; margin-top: 15px; }
-    button:hover { background-color: #184a36; }
-    .ingredient-list { list-style: none; padding: 0; }
-    .ingredient-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
-    .despensa { color: #888; font-size: 0.9em; }
-    #loader { text-align: center; font-style: italic; color: #666; margin: 20px 0; }
-    .toggle-container { margin: 15px 0; display: flex; align-items: center; justify-content: space-between; font-weight: bold; }
+    :root { --primary: #226a4d; --bg: #f4f7f6; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 0; background-color: var(--bg); color: #333; padding-bottom: 70px; }
+    .header { background: white; padding: 15px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; }
+    h2 { margin: 0; color: var(--primary); font-size: 1.2rem; }
+    .container { padding: 20px; max-width: 500px; margin: 0 auto; }
+    
+    /* Tabs Navigation */
+    .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; display: flex; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); }
+    .nav-btn { flex: 1; padding: 15px; border: none; background: none; font-size: 16px; font-weight: bold; color: #888; cursor: pointer; }
+    .nav-btn.active { color: var(--primary); border-bottom: 4px solid var(--primary); }
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* Planificador Cards */
+    .day-card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .day-title { font-weight: bold; margin-bottom: 10px; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
+    .meal-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .meal-row label { width: 75px; font-size: 0.9em; font-weight: bold; }
+    select, input[type="number"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    select { flex: 1; }
+    input[type="number"] { width: 50px; text-align: center; }
+
+    /* Botones y Listas */
+    .btn-main { width: 100%; padding: 15px; background-color: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    .btn-main:disabled { background-color: #999; }
+    .ingredient-list { list-style: none; padding: 0; margin: 0; }
+    .ingredient-item { padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; margin-bottom: 5px; border-radius: 4px; }
+    .toggle-container { margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between; background: white; padding: 15px; border-radius: 8px; }
+    
+    #status { font-size: 0.9em; color: #666; font-style: italic; }
   </style>
 </head>
 <body>
 
+<div class="header">
+  <h2>🍽️ Mi Menú</h2>
+  <span id="status">Cargando...</span>
+</div>
+
 <div class="container">
-  <h2>Lista de Compras Semanal</h2>
-  
-  <div class="toggle-container">
-    <label for="agrupar">Agrupar Ingredientes Iguales</label>
-    <input type="checkbox" id="agrupar" checked onchange="renderListaCompras()">
+  <!-- PANTALLA PLANIFICADOR -->
+  <div id="screen-plan" class="screen active">
+    <div id="planner-container"></div>
+    <button class="btn-main" id="btn-save" onclick="guardarPlan()">Guardar Plan Semanal</button>
   </div>
 
-  <div id="loader">Calculando proporciones e ingredientes...</div>
-  
-  <ul id="listaCompras" class="ingredient-list"></ul>
-  
-  <button onclick="cargarDatos()">Actualizar desde Google Sheets</button>
+  <!-- PANTALLA COMPRAS -->
+  <div id="screen-compras" class="screen">
+    <div class="toggle-container">
+      <label for="agrupar"><strong>Agrupar ingredientes</strong></label>
+      <input type="checkbox" id="agrupar" checked onchange="renderListaCompras()">
+    </div>
+    <ul id="listaCompras" class="ingredient-list"></ul>
+  </div>
+</div>
+
+<!-- NAVEGACIÓN INFERIOR -->
+<div class="nav-bar">
+  <button class="nav-btn active" onclick="switchTab('plan')">Planificar</button>
+  <button class="nav-btn" onclick="switchTab('compras')">Compras</button>
 </div>
 
 <script>
-  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzcpsiUItAFHK41wunooFS7NWZS5mD0yeJB057wR2n5s3jcHjLlq3yWhQvBcrMaOvB1Mw/exec'; // ¡PEGÁ TU URL ACÁ!
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzcpsiUItAFHK41wunooFS7NWZS5mD0yeJB057wR2n5s3jcHjLlq3yWhQvBcrMaOvB1Mw/exec';
   
-  let dbData = null;
+  let dbData = { recetas: [], planificador: [], ingredientes: [] };
+  const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const comidas = ['Almuerzo', 'Cena'];
 
   document.addEventListener("DOMContentLoaded", cargarDatos);
 
-  function cargarDatos() {
-    document.getElementById('loader').style.display = 'block';
-    document.getElementById('listaCompras').innerHTML = '';
+  function switchTab(tab) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`screen-${tab}`).classList.add('active');
+    event.currentTarget.classList.add('active');
+    
+    if(tab === 'compras') renderListaCompras();
+  }
 
+  function setStatus(msg) {
+    document.getElementById('status').textContent = msg;
+  }
+
+  // 1. CARGAR DATOS
+  function cargarDatos() {
+    setStatus("Sincronizando...");
     fetch(SCRIPT_URL)
       .then(res => res.json())
       .then(data => {
         dbData = data;
-        renderListaCompras();
-        document.getElementById('loader').style.display = 'none';
+        renderPlannerUI();
+        setStatus("Actualizado");
       })
-      .catch(err => {
-        document.getElementById('loader').textContent = "Error al cargar la base de datos.";
-      });
+      .catch(err => setStatus("Error de red"));
   }
 
+  // 2. DIBUJAR FORMULARIO PLANIFICADOR
+  function renderPlannerUI() {
+    const container = document.getElementById('planner-container');
+    container.innerHTML = '';
+
+    // Opciones de recetas para los select
+    let optionsHTML = `<option value="">-- Sin asignar --</option>`;
+    dbData.recetas.forEach(r => {
+      optionsHTML += `<option value="${r.id}">${r.nombre}</option>`;
+    });
+
+    dias.forEach(dia => {
+      let card = `<div class="day-card"><div class="day-title">${dia}</div>`;
+      
+      comidas.forEach(comida => {
+        // Buscar si ya hay algo planificado en la BD para este día/comida
+        const planExistente = dbData.planificador.find(p => p.dia === dia && p.comida === comida);
+        const recetaSel = planExistente ? planExistente.receta_id : "";
+        const comensalesVal = planExistente ? planExistente.comensales : 2;
+
+        card += `
+          <div class="meal-row" data-dia="${dia}" data-comida="${comida}">
+            <label>${comida}</label>
+            <select class="sel-receta">
+              ${optionsHTML.replace(`value="${recetaSel}"`, `value="${recetaSel}" selected`)}
+            </select>
+            <input type="number" class="in-comensales" min="1" max="20" value="${comensalesVal}">
+          </div>
+        `;
+      });
+      card += `</div>`;
+      container.innerHTML += card;
+    });
+  }
+
+  // 3. GUARDAR PLAN EN GOOGLE SHEETS
+  function guardarPlan() {
+    const btn = document.getElementById('btn-save');
+    btn.disabled = true;
+    btn.textContent = "Guardando...";
+    setStatus("Enviando...");
+
+    const nuevoPlan = [];
+    document.querySelectorAll('.meal-row').forEach(row => {
+      const recetaId = row.querySelector('.sel-receta').value;
+      if (recetaId) {
+        nuevoPlan.push({
+          dia: row.getAttribute('data-dia'),
+          comida: row.getAttribute('data-comida'),
+          receta_id: recetaId,
+          comensales: parseInt(row.querySelector('.in-comensales').value) || 2
+        });
+      }
+    });
+
+    // Actualizamos la variable local para que compras se recalcule rápido
+    dbData.planificador = nuevoPlan; 
+
+    // Enviamos a Sheets
+    fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ planificador: nuevoPlan })
+    })
+    .then(res => res.text())
+    .then(text => {
+      btn.disabled = false;
+      btn.textContent = "Guardar Plan Semanal";
+      setStatus("Guardado Ok");
+    })
+    .catch(err => {
+      btn.disabled = false;
+      btn.textContent = "Reintentar";
+      setStatus("Error al guardar");
+    });
+  }
+
+  // 4. RENDERIZAR LISTA DE COMPRAS
   function renderListaCompras() {
-    if (!dbData) return;
-    
     const agrupar = document.getElementById('agrupar').checked;
     const listaCompras = [];
 
-    // Recorrer el planificador
+    // Usamos la variable local dbData.planificador (la que acabás de editar o la de la BD)
     dbData.planificador.forEach(comidaPlan => {
-      const idRecetaPlan = comidaPlan.receta_id; // En el Sheets está el ID o nombre de receta
-      const comensales = parseInt(comidaPlan.comensales) || 2;
+      // Buscar la receta basándonos en el ID (puede estar guardado como número o texto)
+      const recetaObj = dbData.recetas.find(r => r.id == comidaPlan.receta_id || r.nombre == comidaPlan.receta_id);
+      if(!recetaObj) return;
 
-      // Buscar ingredientes para esta receta
+      const idRecetaPlan = recetaObj.id;
+      const comensales = parseInt(comidaPlan.comensales) || 2;
       const ingredientesReceta = dbData.ingredientes.filter(ing => ing.receta_id == idRecetaPlan);
 
       ingredientesReceta.forEach(ing => {
         const cantidadTotal = ing.cantidad * comensales;
         
         if (agrupar) {
-          // Buscar si el ingrediente ya existe en la lista agrupada (misma unidad)
           const index = listaCompras.findIndex(item => item.nombre === ing.nombre && item.unidad === ing.unidad);
           if (index > -1) {
             listaCompras[index].cantidad += cantidadTotal;
@@ -83,38 +205,39 @@
             listaCompras.push({ ...ing, cantidad: cantidadTotal });
           }
         } else {
-          // Sin agrupar, agregamos indicando el día
           listaCompras.push({ 
             ...ing, 
             cantidad: cantidadTotal,
-            origen: `(${comidaPlan.dia} ${comidaPlan.comida})` 
+            origen: `(${comidaPlan.dia.substring(0,3)} ${comidaPlan.comida.substring(0,3)})` 
           });
         }
       });
     });
 
-    // Renderizar HTML
     const ul = document.getElementById('listaCompras');
     ul.innerHTML = '';
     
-    // Ordenar alfabéticamente
-    listaCompras.sort((a, b) => a.nombre.localeCompare(b.nombre));
-
     if(listaCompras.length === 0) {
-      ul.innerHTML = '<li class="ingredient-item">No hay comidas planificadas esta semana.</li>';
+      ul.innerHTML = '<li class="ingredient-item" style="justify-content:center;">Aún no planificaste comidas.</li>';
       return;
     }
+
+    listaCompras.sort((a, b) => a.nombre.localeCompare(b.nombre));
 
     listaCompras.forEach(item => {
       const li = document.createElement('li');
       li.className = 'ingredient-item';
-      
       const iconoDespensa = item.es_despensa === true || item.es_despensa === 'SÍ' ? ' 🏠' : '';
-      const origenStr = item.origen ? ` <span style="font-size:0.8em; color:gray">${item.origen}</span>` : '';
+      const origenStr = item.origen ? ` <div style="font-size:0.75em; color:#888; margin-top:4px;">${item.origen}</div>` : '';
       
       li.innerHTML = `
-        <span>${item.nombre}${iconoDespensa}${origenStr}</span>
-        <strong>${item.cantidad} ${item.unidad}</strong>
+        <div>
+          <strong>${item.nombre}</strong>${iconoDespensa}
+          ${origenStr}
+        </div>
+        <div style="font-weight:bold; color:var(--primary);">
+          ${item.cantidad} ${item.unidad}
+        </div>
       `;
       ul.appendChild(li);
     });
