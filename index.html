@@ -31,12 +31,11 @@
     .btn-main { width: 100%; padding: 15px; background-color: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
     .btn-main:disabled { background-color: #999; }
     .ingredient-list { list-style: none; padding: 0; margin: 0; }
-    .ingredient-item { padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; margin-bottom: 5px; border-radius: 4px; }
+    .ingredient-item { padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; margin-bottom: 5px; border-radius: 4px; transition: 0.2s; }
     
-    /* ESTILOS NUEVOS PARA LOS CHECKBOXES */
     .item-checkbox { margin-right: 10px; width: 18px; height: 18px; cursor: pointer; }
     .item-text-container { display: flex; align-items: center; flex: 1; }
-    .comprado { text-decoration: line-through; color: #999; }
+    .comprado { text-decoration: line-through; color: #999; opacity: 0.7; }
     .comprado strong { color: #999 !important; }
 
     .toggle-container { margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between; background: white; padding: 15px; border-radius: 8px; }
@@ -52,26 +51,23 @@
 </div>
 
 <div class="container">
-  <!-- PANTALLA PLANIFICADOR -->
   <div id="screen-plan" class="screen active">
     <div id="planner-container"></div>
     <button class="btn-main" id="btn-save" onclick="guardarPlan()">Guardar Plan Semanal</button>
   </div>
 
-  <!-- PANTALLA COMPRAS -->
   <div id="screen-compras" class="screen">
     <div class="toggle-container">
       <label for="agrupar"><strong>Agrupar ingredientes</strong></label>
       <input type="checkbox" id="agrupar" checked onchange="renderListaCompras()">
     </div>
     <div style="text-align: right; margin-bottom: 10px;">
-        <button onclick="limpiarChecks()" style="padding: 5px 10px; background: none; border: 1px solid #ccc; border-radius: 4px; color: #666; font-size: 12px; cursor: pointer;">Limpiar checkboxes</button>
+        <button onclick="limpiarChecks()" id="btn-clean" style="padding: 5px 10px; background: none; border: 1px solid #ccc; border-radius: 4px; color: #666; font-size: 12px; cursor: pointer;">Limpiar para nueva compra</button>
     </div>
     <ul id="listaCompras" class="ingredient-list"></ul>
   </div>
 </div>
 
-<!-- NAVEGACIÓN INFERIOR -->
 <div class="nav-bar">
   <button class="nav-btn active" onclick="switchTab('plan')">Planificar</button>
   <button class="nav-btn" onclick="switchTab('compras')">Compras</button>
@@ -83,9 +79,6 @@
   let dbData = { recetas: [], planificador: [], ingredientes: [] };
   const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
   const comidas = ['Almuerzo', 'Cena'];
-
-  // Variables para guardar el estado de los checkboxes
-  let itemsComprados = JSON.parse(localStorage.getItem('compras_tildadas')) || {};
 
   document.addEventListener("DOMContentLoaded", cargarDatos);
 
@@ -110,6 +103,9 @@
       .then(data => {
         dbData = data;
         renderPlannerUI();
+        if(document.getElementById('screen-compras').classList.contains('active')) {
+            renderListaCompras();
+        }
         setStatus("Actualizado");
       })
       .catch(err => setStatus("Error de red"));
@@ -152,8 +148,7 @@
   function guardarPlan() {
     const btn = document.getElementById('btn-save');
     btn.disabled = true;
-    btn.textContent = "Guardando...";
-    setStatus("Enviando...");
+    setStatus("Guardando Plan...");
 
     const nuevoPlan = [];
     document.querySelectorAll('.meal-row').forEach(row => {
@@ -173,42 +168,77 @@
     fetch(SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ planificador: nuevoPlan })
+      body: JSON.stringify({ action: "savePlan", planificador: nuevoPlan })
     })
     .then(res => res.text())
     .then(text => {
       btn.disabled = false;
-      btn.textContent = "Guardar Plan Semanal";
-      setStatus("Guardado Ok");
+      setStatus("Sincronizado");
     })
     .catch(err => {
       btn.disabled = false;
-      btn.textContent = "Reintentar";
-      setStatus("Error al guardar");
+      setStatus("Error de sincronización");
     });
   }
 
-  // FUNCIÓN PARA GUARDAR EL ESTADO DEL CHECKBOX
-  function toggleCompra(id, element) {
+  // 4. GUARDAR CHECK DE COMPRA EN GOOGLE SHEETS
+  function toggleCompra(nombreIngrediente, element) {
+    const isChecked = element.checked;
     const li = element.closest('li');
-    if (element.checked) {
-      itemsComprados[id] = true;
+    
+    // Cambio visual inmediato
+    if (isChecked) {
       li.classList.add('comprado');
     } else {
-      delete itemsComprados[id];
       li.classList.remove('comprado');
     }
-    // Guardar en el celular
-    localStorage.setItem('compras_tildadas', JSON.stringify(itemsComprados));
+    
+    // Actualizar variable local para evitar desfasajes si no se recarga
+    dbData.ingredientes.forEach(ing => {
+        if(ing.nombre === nombreIngrediente) {
+            ing.comprado = isChecked;
+        }
+    });
+
+    setStatus("Actualizando nube...");
+    
+    fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: "toggleCompra", nombre: nombreIngrediente, comprado: isChecked })
+    })
+    .then(() => setStatus("Sincronizado"))
+    .catch(() => setStatus("Error al sincronizar check"));
   }
 
+  // 5. LIMPIAR TODOS LOS CHECKS PARA UNA NUEVA SEMANA
   function limpiarChecks() {
-      itemsComprados = {};
-      localStorage.removeItem('compras_tildadas');
-      renderListaCompras();
+    if(!confirm("¿Seguro que querés despintar todos los ingredientes?")) return;
+    
+    const btn = document.getElementById('btn-clean');
+    btn.disabled = true;
+    setStatus("Limpiando servidor...");
+
+    // Limpiar localmente rápido
+    dbData.ingredientes.forEach(ing => ing.comprado = false);
+    renderListaCompras();
+
+    fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: "clearChecks" })
+    })
+    .then(() => {
+      btn.disabled = false;
+      setStatus("Sincronizado");
+    })
+    .catch(() => {
+      btn.disabled = false;
+      setStatus("Error al limpiar");
+    });
   }
 
-  // 4. RENDERIZAR LISTA DE COMPRAS
+  // 6. RENDERIZAR LISTA DE COMPRAS
   function renderListaCompras() {
     const agrupar = document.getElementById('agrupar').checked;
     const listaCompras = [];
@@ -228,6 +258,8 @@
           const index = listaCompras.findIndex(item => item.nombre === ing.nombre && item.unidad === ing.unidad);
           if (index > -1) {
             listaCompras[index].cantidad += cantidadTotal;
+            // Si al menos una parte está comprada, se considera comprado (lógica conservadora)
+            // O viceversa: si está marcado comprado en dbData, lo respetamos.
           } else {
             listaCompras.push({ ...ing, cantidad: cantidadTotal });
           }
@@ -254,18 +286,17 @@
     listaCompras.forEach((item, index) => {
       const li = document.createElement('li');
       
-      // Crear un ID único para cada fila de compra
-      const uniqueId = agrupar ? `${item.nombre}-${item.unidad}` : `${item.nombre}-${item.unidad}-${item.origen}`;
-      const isChecked = itemsComprados[uniqueId] ? 'checked' : '';
+      const isChecked = item.comprado ? 'checked' : '';
       
-      li.className = `ingredient-item ${isChecked ? 'comprado' : ''}`;
+      li.className = `ingredient-item ${item.comprado ? 'comprado' : ''}`;
       
       const iconoDespensa = item.es_despensa === true || item.es_despensa === 'SÍ' ? ' 🏠' : '';
       const origenStr = item.origen ? ` <div style="font-size:0.75em; color:#888; margin-top:4px;">${item.origen}</div>` : '';
       
+      // Le pasamos el nombre real del ingrediente para que Apps Script lo encuentre fácil
       li.innerHTML = `
         <div class="item-text-container">
-          <input type="checkbox" class="item-checkbox" id="chk-${index}" ${isChecked} onchange="toggleCompra('${uniqueId}', this)">
+          <input type="checkbox" class="item-checkbox" id="chk-${index}" ${isChecked} onchange="toggleCompra('${item.nombre}', this)">
           <label for="chk-${index}" style="cursor: pointer;">
             <strong>${item.nombre}</strong>${iconoDespensa}
             ${origenStr}
