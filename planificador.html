@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Planificador y Compras</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; background-color: #f4f7f6; color: #333; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    h2 { color: #226a4d; border-bottom: 2px solid #226a4d; padding-bottom: 10px; }
+    button { width: 100%; padding: 12px; background-color: #226a4d; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; margin-top: 15px; }
+    button:hover { background-color: #184a36; }
+    .ingredient-list { list-style: none; padding: 0; }
+    .ingredient-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+    .despensa { color: #888; font-size: 0.9em; }
+    #loader { text-align: center; font-style: italic; color: #666; margin: 20px 0; }
+    .toggle-container { margin: 15px 0; display: flex; align-items: center; justify-content: space-between; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>Lista de Compras Semanal</h2>
+  
+  <div class="toggle-container">
+    <label for="agrupar">Agrupar Ingredientes Iguales</label>
+    <input type="checkbox" id="agrupar" checked onchange="renderListaCompras()">
+  </div>
+
+  <div id="loader">Calculando proporciones e ingredientes...</div>
+  
+  <ul id="listaCompras" class="ingredient-list"></ul>
+  
+  <button onclick="cargarDatos()">Actualizar desde Google Sheets</button>
+</div>
+
+<script>
+  const SCRIPT_URL = 'TU_URL_DE_APPS_SCRIPT_AQUI'; // ¡PEGÁ TU URL ACÁ!
+  
+  let dbData = null;
+
+  document.addEventListener("DOMContentLoaded", cargarDatos);
+
+  function cargarDatos() {
+    document.getElementById('loader').style.display = 'block';
+    document.getElementById('listaCompras').innerHTML = '';
+
+    fetch(SCRIPT_URL)
+      .then(res => res.json())
+      .then(data => {
+        dbData = data;
+        renderListaCompras();
+        document.getElementById('loader').style.display = 'none';
+      })
+      .catch(err => {
+        document.getElementById('loader').textContent = "Error al cargar la base de datos.";
+      });
+  }
+
+  function renderListaCompras() {
+    if (!dbData) return;
+    
+    const agrupar = document.getElementById('agrupar').checked;
+    const listaCompras = [];
+
+    // Recorrer el planificador
+    dbData.planificador.forEach(comidaPlan => {
+      const idRecetaPlan = comidaPlan.receta_id; // En el Sheets está el ID o nombre de receta
+      const comensales = parseInt(comidaPlan.comensales) || 2;
+
+      // Buscar ingredientes para esta receta
+      const ingredientesReceta = dbData.ingredientes.filter(ing => ing.receta_id == idRecetaPlan);
+
+      ingredientesReceta.forEach(ing => {
+        const cantidadTotal = ing.cantidad * comensales;
+        
+        if (agrupar) {
+          // Buscar si el ingrediente ya existe en la lista agrupada (misma unidad)
+          const index = listaCompras.findIndex(item => item.nombre === ing.nombre && item.unidad === ing.unidad);
+          if (index > -1) {
+            listaCompras[index].cantidad += cantidadTotal;
+          } else {
+            listaCompras.push({ ...ing, cantidad: cantidadTotal });
+          }
+        } else {
+          // Sin agrupar, agregamos indicando el día
+          listaCompras.push({ 
+            ...ing, 
+            cantidad: cantidadTotal,
+            origen: `(${comidaPlan.dia} ${comidaPlan.comida})` 
+          });
+        }
+      });
+    });
+
+    // Renderizar HTML
+    const ul = document.getElementById('listaCompras');
+    ul.innerHTML = '';
+    
+    // Ordenar alfabéticamente
+    listaCompras.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    if(listaCompras.length === 0) {
+      ul.innerHTML = '<li class="ingredient-item">No hay comidas planificadas esta semana.</li>';
+      return;
+    }
+
+    listaCompras.forEach(item => {
+      const li = document.createElement('li');
+      li.className = 'ingredient-item';
+      
+      const iconoDespensa = item.es_despensa === true || item.es_despensa === 'SÍ' ? ' 🏠' : '';
+      const origenStr = item.origen ? ` <span style="font-size:0.8em; color:gray">${item.origen}</span>` : '';
+      
+      li.innerHTML = `
+        <span>${item.nombre}${iconoDespensa}${origenStr}</span>
+        <strong>${item.cantidad} ${item.unidad}</strong>
+      `;
+      ul.appendChild(li);
+    });
+  }
+</script>
+</body>
+</html>
