@@ -26,8 +26,9 @@
     input[type="number"] { width: 50px; text-align: center; flex-shrink: 0; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
 
     /* Botones y Listas */
-    .btn-main { width: 100%; padding: 15px; background-color: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-    .btn-main:disabled { background-color: #999; }
+    .btn-main { width: 100%; padding: 15px; background-color: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: 0.3s; }
+    .btn-main:disabled { background-color: #999 !important; }
+    .btn-main.btn-warning { background-color: #d35400; }
     
     .btn-danger { width: 100%; padding: 15px; background-color: #dc3545; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
     .btn-danger:disabled { background-color: #999; }
@@ -82,8 +83,33 @@
   let dbData = { recetas: [], planificador: [], ingredientes: [] };
   const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
   const comidas = ['Almuerzo', 'Cena'];
+  
+  // Variable para control de cambios sin guardar
+  let hayCambiosSinGuardar = false;
 
   document.addEventListener("DOMContentLoaded", cargarDatos);
+
+  // Advertencia al intentar cerrar o recargar la página con cambios sin guardar
+  window.addEventListener('beforeunload', function (e) {
+    if (hayCambiosSinGuardar) {
+      e.preventDefault();
+      e.returnValue = 'Tienes cambios sin guardar. ¿Seguro que quieres salir?';
+    }
+  });
+
+  function marcarCambios() {
+    hayCambiosSinGuardar = true;
+    const btn = document.getElementById('btn-save');
+    btn.classList.add('btn-warning');
+    btn.textContent = "⚠️ Guardar Cambios";
+  }
+
+  function resetCambios() {
+    hayCambiosSinGuardar = false;
+    const btn = document.getElementById('btn-save');
+    btn.classList.remove('btn-warning');
+    btn.textContent = "Guardar Plan Semanal";
+  }
 
   function switchTab(tab) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -98,7 +124,6 @@
     document.getElementById('status').textContent = msg;
   }
 
-  // Utilidad para quitar tildes/acentos
   function removeAccents(str) {
     return str.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   }
@@ -115,11 +140,12 @@
             renderListaCompras();
         }
         setStatus("Actualizado");
+        resetCambios(); // Al cargar, estamos limpios
       })
       .catch(err => setStatus("Error de red"));
   }
 
-  // 2. DIBUJAR FORMULARIO PLANIFICADOR CON CUSTOM DROPDOWN
+  // 2. DIBUJAR FORMULARIO PLANIFICADOR
   function renderPlannerUI() {
     const container = document.getElementById('planner-container');
     container.innerHTML = '';
@@ -138,11 +164,11 @@
             <div style="position:relative; flex:1; min-width:0;">
               <input type="text" class="sel-receta" placeholder="Buscar..." value="${recetaNombre}" 
                      style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:4px; font-size:14px;"
-                     onfocus="showDropdown(this)" oninput="filterDropdown(this)">
+                     onfocus="showDropdown(this)" oninput="filterDropdown(this); marcarCambios();">
               <div class="custom-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #ccc; max-height:200px; overflow-y:auto; z-index:100; border-radius:4px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
               </div>
             </div>
-            <input type="number" class="in-comensales" min="1" max="20" value="${comensalesVal}">
+            <input type="number" class="in-comensales" min="1" max="20" value="${comensalesVal}" onchange="marcarCambios()">
           </div>
         `;
       });
@@ -175,9 +201,10 @@
         optionDiv.style.borderBottom = '1px solid #eee';
         
         optionDiv.onmousedown = function(e) {
-            e.preventDefault(); // Importante para no perder foco antes del click
+            e.preventDefault(); 
             inputElem.value = r.nombre;
             dropdown.style.display = 'none';
+            marcarCambios(); // Registramos el cambio visualmente
         };
         dropdown.appendChild(optionDiv);
       }
@@ -188,7 +215,6 @@
     }
   }
 
-  // Ocultar dropdown si se hace click afuera
   document.addEventListener('mousedown', function(e) {
     if (!e.target.classList.contains('sel-receta') && !e.target.closest('.custom-dropdown')) {
         document.querySelectorAll('.custom-dropdown').forEach(d => d.style.display = 'none');
@@ -225,6 +251,7 @@
     .then(res => res.text())
     .then(text => {
       btn.disabled = false;
+      resetCambios(); // Limpiamos la alerta visual y lógica
       setStatus("Sincronizado");
     })
     .catch(err => {
@@ -237,10 +264,8 @@
   function limpiarPlan() {
     if(!confirm("¿Seguro que querés vaciar todo el planificador de la semana?")) return;
     
-    // Vaciar visualmente los inputs
     document.querySelectorAll('.sel-receta').forEach(input => input.value = '');
-    
-    // Guardar el plan vacío
+    marcarCambios();
     guardarPlan();
   }
 
